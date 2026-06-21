@@ -74,10 +74,15 @@
       topics: topics,
     };
 
-    // 重新渲染
-    if (typeof window.debateRerender === "function") {
-      window.debateRerender();
+    // 等 app.js 準備好再渲染
+    function tryRerender() {
+      if (typeof window.debateRerender === "function") {
+        window.debateRerender();
+      } else {
+        setTimeout(tryRerender, 50);
+      }
     }
+    tryRerender();
 
     console.log("Supabase 資料載入完成：" + records.length + " 筆戰績、" + honors.length + " 筆榮譽");
   } catch (err) {
