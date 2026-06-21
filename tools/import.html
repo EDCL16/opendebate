@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <title>匯入資料到 Supabase</title>
+  <style>
+    body { font-family: system-ui; max-width: 600px; margin: 40px auto; padding: 0 20px; }
+    h1 { font-size: 1.4rem; }
+    label { display: block; margin: 12px 0 4px; font-weight: bold; }
+    input { width: 100%; padding: 8px; font-size: 14px; box-sizing: border-box; }
+    button { margin-top: 16px; padding: 10px 24px; font-size: 16px; cursor: pointer; }
+    pre { background: #f5f5f5; padding: 12px; overflow: auto; max-height: 400px; font-size: 12px; white-space: pre-wrap; }
+    .warn { color: #c00; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <h1>匯入現有資料到 Supabase</h1>
+  <p>這個工具會讀取 <code>data/public-data.js</code> 的所有資料，寫入你的 Supabase 資料庫。只需跑一次。</p>
+
+  <label for="serviceKey">Service Role Key（在 Dashboard → Settings → API → service_role）</label>
+  <input id="serviceKey" type="password" placeholder="eyJ..." />
+  <p class="warn">⚠️ 這個 key 不會上傳到任何地方，只在你的瀏覽器本地使用。用完這個頁面就可以關掉。</p>
+
+  <button id="startBtn" onclick="startImport()">開始匯入</button>
+  <pre id="log"></pre>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="../data/public-data.js"></script>
+  <script>
+    const SUPABASE_URL = "https://unutdrsamjzhipastoki.supabase.co";
+
+    function log(msg) {
+      document.getElementById("log").textContent += msg + "\n";
+    }
+
+    async function startImport() {
+      const key = document.getElementById("serviceKey").value.trim();
+      if (!key) { alert("請貼上 service_role key"); return; }
+
+      const btn = document.getElementById("startBtn");
+      btn.disabled = true;
+      btn.textContent = "匯入中...";
+      document.getElementById("log").textContent = "";
+
+      const db = supabase.createClient(SUPABASE_URL, key);
+      const data = window.DEBATE_PUBLIC_DATA;
+
+      if (!data || !data.entities) {
+        log("錯誤：無法讀取 public-data.js");
+        btn.disabled = false;
+        btn.textContent = "開始匯入";
+        return;
+      }
+
+      log("資料概覽：");
+      log("  entities: " + data.entities.length + " 筆");
+      log("  records: " + (data.records || []).length + " 筆");
+      log("  honors: " + (data.honors || []).length + " 筆");
+      log("  topics: " + (data.topics || []).length + " 筆");
+      log("");
+
+      // 1. Entities
+      try {
+        log("匯入 entities...");
+        const entities = data.entities.map(function (e) {
+          return { code: e.code, type: e.type, name: e.name, aliases: e.aliases || "" };
+        });
+        for (var i = 0; i < entities.length; i += 500) {
+          var batch = entities.slice(i, i + 500);
+          var res = await db.from("entities").upsert(batch, { onConflict: "code" });
+          if (res.error) { log("  錯誤: " + res.error.message); return; }
+        }
+        log("  完成：" + entities.length + " 筆");
+      } catch (err) { log("entities 錯誤: " + err.message); return; }
+
+      // 2. Competitions
+      try {
+        log("匯入 competitions...");
+        var compNames = [];
+        var seen = {};
+        (data.records || []).forEach(function (r) {
+          if (r.competitionName && !seen[r.competitionName]) {
+            seen[r.competitionName] = true;
+            compNames.push(r.competitionName);
+          }
+        });
+        (data.honors || []).forEach(function (h) {
+          if (h.competitionName && !seen[h.competitionName]) {
+            seen[h.competitionName] = true;
+            compNames.push(h.competitionName);
+          }
+        });
+        (data.topics || []).forEach(function (t) {
+          if (t.competitionName && !seen[t.competitionName]) {
+            seen[t.competitionName] = true;
+            compNames.push(t.competitionName);
+          }
+        });
+
+        var compMap = {};
+        for (var ci = 0; ci < compNames.length; ci++) {
+          var name = compNames[ci];
+          var dates = (data.records || [])
+            .filter(function (r) { return r.competitionName === name && r.matchDate; })
+            .map(function (r) { return r.matchDate; });
+          var startDate = dates.length ? dates.sort()[0] : null;
+          var endDate = dates.length ? dates.sort()[dates.length - 1] : null;
+
+          var res = await db.from("competitions")
+            .upsert({ name: name, start_date: startDate, end_date: endDate, is_public: true }, { onConflict: "name" })
+            .select("id")
+            .single();
+          if (res.error) { log("  competition 錯誤 (" + name + "): " + res.error.message); continue; }
+          compMap[name] = res.data.id;
+        }
+        log("  完成：" + Object.keys(compMap).length + " 筆盃賽");
+      } catch (err) { log("competitions 錯誤: " + err.message); return; }
+
+      // 3. Topics
+      try {
+        log("匯入 topics...");
+        var topicRows = (data.topics || []).map(function (t, idx) {
+          return {
+            competition_id: compMap[t.competitionName] || null,
+            title: t.topic || "",
+            explanation: t.explanation || "",
+            sort_order: idx,
+          };
+        }).filter(function (r) { return r.competition_id; });
+
+        for (var i = 0; i < topicRows.length; i += 500) {
+          var res = await db.from("topics").insert(topicRows.slice(i, i + 500));
+          if (res.error) { log("  topics 錯誤: " + res.error.message); break; }
+        }
+        log("  完成：" + topicRows.length + " 筆");
+      } catch (err) { log("topics 錯誤: " + err.message); }
+
+      // 4. Public Records
+      try {
+        log("匯入 public_records...");
+        var prRows = (data.records || []).map(function (r) {
+          var teams = r.teams || {};
+          var scores = r.scores || {};
+          var teamIds = r.teamIds || {};
+          return {
+            competition_id: compMap[r.competitionName] || null,
+            match_date: r.matchDate || null,
+            affirmative_team: teams.affirmative || "",
+            negative_team: teams.negative || "",
+            affirmative_entity: teamIds.affirmative || null,
+            negative_entity: teamIds.negative || null,
+            score_aff: scores.affirmative != null ? scores.affirmative : null,
+            score_neg: scores.negative != null ? scores.negative : null,
+            winner: r.winner || "",
+            source: "public-data.js 匯入",
+          };
+        });
+
+        for (var i = 0; i < prRows.length; i += 500) {
+          var batch = prRows.slice(i, i + 500);
+          var res = await db.from("public_records").insert(batch);
+          if (res.error) { log("  public_records 錯誤 (batch " + i + "): " + res.error.message); break; }
+          log("  已寫入 " + Math.min(i + 500, prRows.length) + " / " + prRows.length);
+        }
+        log("  完成：" + prRows.length + " 筆");
+      } catch (err) { log("public_records 錯誤: " + err.message); }
+
+      // 5. Honors
+      try {
+        log("匯入 honors...");
+        var honorRows = (data.honors || []).map(function (h) {
+          return {
+            competition_id: compMap[h.competitionName] || null,
+            honor_type: h.honorType || "team",
+            title: h.honorName || "",
+            recipient: h.recipient || "",
+            entity_code: h.teamId || null,
+            school: h.team || null,
+            note: h.note || null,
+          };
+        });
+
+        for (var i = 0; i < honorRows.length; i += 500) {
+          var batch = honorRows.slice(i, i + 500);
+          var res = await db.from("honors").insert(batch);
+          if (res.error) { log("  honors 錯誤: " + res.error.message); break; }
+        }
+        log("  完成：" + honorRows.length + " 筆");
+      } catch (err) { log("honors 錯誤: " + err.message); }
+
+      log("");
+      log("全部完成！去 Supabase Table Editor 確認資料。");
+      btn.textContent = "匯入完成 ✓";
+    }
+  </script>
+</body>
+</html>

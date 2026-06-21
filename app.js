@@ -286,3 +286,14 @@ function renderAll() {
 
 events = eventSummaries();
 renderAll();
+
+// ponytail: Supabase loader 載入成功後會呼叫這個重新渲染
+window.debateRerender = function () {
+  const freshStore = createStore(window.DEBATE_PUBLIC_DATA);
+  Object.assign(store, freshStore);
+  records = freshStore.records;
+  honors = freshStore.honors;
+  topics = freshStore.topics;
+  events = eventSummaries();
+  renderAll();
+};
