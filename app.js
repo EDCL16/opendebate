@@ -264,6 +264,11 @@ window.DebateInteractions.setupInteractions({ els, showView, renderEvent, render
 
 function renderAll() {
   if (!records.length && !honors.length) {
+    // ponytail: 如果有 Supabase config，顯示載入中而不是錯誤，保留 DOM 給 loader 用
+    if (window.SUPABASE_CONFIG) {
+      els.statsBand.innerHTML = '<div class="stat-item"><span>載入中...</span></div>';
+      return;
+    }
     document.querySelector("main").innerHTML = `
       <section class="data-error page-shell">
         <span aria-hidden="true">📂</span>
