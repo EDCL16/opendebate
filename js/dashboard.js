@@ -503,7 +503,8 @@
       if (!sel) return;
       e.target.disabled = true;
       e.target.textContent = "…";
-      await db.from("profiles").update({ role: sel.value, updated_at: new Date().toISOString() }).eq("id", uid);
+      var upRes = await db.from("profiles").update({ role: sel.value }).eq("id", uid);
+      if (upRes.error) { e.target.textContent = "失敗"; alert(translateError(upRes.error.message)); e.target.disabled = false; return; }
       e.target.textContent = "已儲存";
       setTimeout(function () { e.target.textContent = "儲存"; e.target.disabled = false; }, 1500);
     });
