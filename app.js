@@ -42,12 +42,21 @@ function eventSummaries() {
 
 
 function showView(name) {
-  const target = ["home", "events", "search", "reports"].includes(name) ? name : "home";
-  els.views.forEach((view) => view.classList.toggle("is-hidden", view.dataset.viewPanel !== target));
-  els.navButtons.forEach((button) => button.classList.toggle("is-active", button.dataset.view === target));
+  const allViews = ["home", "events", "search", "reports", "dashboard", "admin", "recorder"];
+  let target = allViews.includes(name) ? name : "home";
+  if (target === "dashboard" && !window.DebateAuth?.isLoggedIn) target = "home";
+  if (target === "admin" && !window.DebateAuth?.isAdmin) target = "home";
+  if (target === "recorder" && !window.DebateAuth?.isRecorder && !window.DebateAuth?.isAdmin) target = "home";
+  const views = document.querySelectorAll("[data-view-panel]");
+  const navButtons = document.querySelectorAll("[data-view]");
+  views.forEach((view) => view.classList.toggle("is-hidden", view.dataset.viewPanel !== target));
+  navButtons.forEach((button) => button.classList.toggle("is-active", button.dataset.view === target));
   if (location.hash !== `#${target}`) history.replaceState(null, "", `#${target}`);
   window.scrollTo({ top: 0, behavior: "smooth" });
   if (target === "search") requestAnimationFrame(() => els.globalSearch.focus());
+  if (target === "dashboard") window.DebateDashboard?.renderDashboard?.();
+  if (target === "admin") window.DebateDashboard?.renderAdmin?.();
+  if (target === "recorder") window.DebateDashboard?.renderRecorder?.();
 }
 
 function renderStats() {

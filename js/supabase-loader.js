@@ -88,4 +88,12 @@
   } catch (err) {
     console.warn("Supabase 載入失敗，使用靜態資料", err);
   }
+
+  // 初始化 Auth 和 Dashboard 模組
+  if (typeof window.DebateAuth !== "undefined") {
+    window.DebateAuth.init(db);
+  }
+  if (typeof window.DebateDashboard !== "undefined") {
+    window.DebateDashboard.init(db);
+  }
 }());

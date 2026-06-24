@@ -19,7 +19,18 @@
       <button class="nav-button" type="button" data-view="events">賽事</button>
       <button class="nav-button" type="button" data-view="search">搜尋</button>
       <button class="nav-button" type="button" data-view="reports">資料回報</button>
+      <button class="nav-button is-hidden" type="button" data-view="dashboard" id="navDashboard">我的紀錄</button>
+      <button class="nav-button is-hidden" type="button" data-view="admin" id="navAdmin">管理後台</button>
+      <button class="nav-button is-hidden" type="button" data-view="recorder" id="navRecorder">提交裁判單</button>
     </nav>
+    <div class="auth-controls" id="authControls">
+      <button class="auth-login-btn" type="button" id="loginBtn">登入</button>
+      <div class="auth-user is-hidden" id="authUser">
+        <span class="auth-name" id="authUserName"></span>
+        <span class="auth-role-badge" id="authRoleBadge"></span>
+        <button class="auth-logout-btn" type="button" id="logoutBtn">登出</button>
+      </div>
+    </div>
   </header>
 
   <main>
@@ -132,11 +143,62 @@
         <aside class="report-note"><strong>為什麼使用 Google 表單？</strong><p>本站是靜態網站，Google 表單能處理手機填寫、附件上傳與回覆彙整，也不會把管理權限或個人資料放進網站程式。表單連結可隨時替換。</p></aside>
       </div>
     </section>
+    <section id="dashboardView" class="view is-hidden" data-view-panel="dashboard">
+      <div class="page-intro page-shell">
+        <p class="kicker">MY RECORDS</p>
+        <h1>我的辯論紀錄</h1>
+        <p id="dashboardMeta"></p>
+      </div>
+      <div class="page-shell" id="dashboardContent"></div>
+    </section>
+
+    <section id="adminView" class="view is-hidden" data-view-panel="admin">
+      <div class="page-intro page-shell">
+        <p class="kicker">ADMIN</p>
+        <h1>管理後台</h1>
+      </div>
+      <div class="page-shell" id="adminContent">
+        <div class="admin-tabs" id="adminTabs"></div>
+        <div id="adminPanel"></div>
+      </div>
+    </section>
+
+    <section id="recorderView" class="view is-hidden" data-view-panel="recorder">
+      <div class="page-intro page-shell">
+        <p class="kicker">RECORDER</p>
+        <h1>提交裁判單</h1>
+        <p>選擇場次、填寫裁判單，提交後由管理員審核。</p>
+      </div>
+      <div class="page-shell" id="recorderContent"></div>
+    </section>
   </main>
 
   <footer>
     <div class="page-shell"><strong>公開辯論資訊網</strong><span>資料來自公開賽務資訊，持續整理中。</span></div>
   </footer>
+
+  <div id="loginModal" class="modal-overlay is-hidden" role="dialog" aria-labelledby="loginTitle" aria-modal="true">
+    <div class="modal-card">
+      <button class="modal-close" type="button" data-close-login aria-label="關閉">&times;</button>
+      <h2 id="loginTitle">登入</h2>
+      <form id="loginForm" autocomplete="on">
+        <label>Email<input id="loginEmail" type="email" required autocomplete="email" /></label>
+        <label>密碼<input id="loginPassword" type="password" required autocomplete="current-password" /></label>
+        <p id="loginError" class="form-error is-hidden"></p>
+        <button class="form-submit" type="submit">登入</button>
+      </form>
+      <form id="signupForm" class="is-hidden" autocomplete="on">
+        <label>Email<input id="signupEmail" type="email" required autocomplete="email" /></label>
+        <label>密碼<input id="signupPassword" type="password" required minlength="6" autocomplete="new-password" /></label>
+        <label>姓名（顯示名稱）<input id="signupName" type="text" required /></label>
+        <label>字頭<input id="signupInitial" type="text" /></label>
+        <p id="signupError" class="form-error is-hidden"></p>
+        <button class="form-submit" type="submit">註冊</button>
+      </form>
+      <div class="modal-divider"><span>或</span></div>
+      <button class="text-link toggle-auth-mode" type="button" id="toggleAuthMode">還沒有帳號？註冊</button>
+    </div>
+  </div>
 
   <script src="data/public-data.js?v=20260616204322" data-public-data-script></script>
   <script src="js/site-config.js?v=20260616204322" data-versioned-asset></script>
@@ -144,6 +206,8 @@
   <script src="js/core.js?v=20260616204322" data-versioned-asset></script>
   <script src="js/interactions.js?v=20260616204322" data-versioned-asset></script>
   <script src="app.js?v=20260616204322" data-versioned-asset></script>
+  <script src="js/auth.js?v=20260616204322" defer data-versioned-asset></script>
+  <script src="js/dashboard.js?v=20260616204322" defer data-versioned-asset></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
   <script src="js/supabase-loader.js?v=20260616204322" defer data-versioned-asset></script>
 </body>
