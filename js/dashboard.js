@@ -296,14 +296,15 @@
   var ADMIN_TABLES = [
     { key: "pending", label: "待審核" },
     { key: "competitions", label: "賽事", cols: ["name", "start_date", "end_date", "organizer", "is_public", "expected_ballot_count"] },
-    { key: "entities", label: "隊伍", cols: ["code", "type", "name", "aliases"] },
+    { key: "entities", label: "隊伍", cols: ["code", "type", "name"] },
     { key: "matches", label: "場次", cols: ["competition_id", "match_date", "period", "venue", "affirmative_team", "negative_team", "affirmative_entity", "negative_entity", "status"] },
     { key: "ballots", label: "裁判單", cols: ["match_id", "judge", "recorder", "argument_score_aff", "argument_score_neg", "closing_score_aff", "closing_score_neg", "total_aff", "total_neg", "ballot_winner", "approval_status"] },
     { key: "player_scores", label: "選手分數", cols: ["match_id", "ballot_id", "player_name", "side", "seat_order", "speech", "question", "defense", "total"] },
-    { key: "honors", label: "榮譽", cols: ["competition_id", "honor_type", "title", "recipient", "entity_code", "school", "note"] },
+    { key: "honors", label: "榮譽", cols: ["competition_id", "honor_type", "title", "recipient", "entity_code", "note"] },
     { key: "public_records", label: "公開戰績", cols: ["competition_id", "match_date", "affirmative_team", "negative_team", "score_aff", "score_neg", "winner"] },
     { key: "topics", label: "辯題", cols: ["competition_id", "title", "explanation", "sort_order"] },
     { key: "profiles", label: "使用者", cols: ["display_name", "initial", "role"] },
+    { key: "entity_aliases", label: "隊伍別名", cols: ["entity_code", "alias"] },
   ];
 
   // FK 欄位 → 對應的下拉選單資料來源
@@ -331,7 +332,7 @@
     player_name: "選手姓名", side: "持方", seat_order: "座序",
     speech: "申論", question: "質詢", defense: "答辯", total: "總分",
     honor_type: "類型（team/individual）", title: "標題", recipient: "得獎者",
-    entity_code: "學校", school: "學校名稱", note: "備註",
+    entity_code: "學校", alias: "別名", note: "備註",
     score_aff: "正方比分", score_neg: "反方比分", winner: "勝方",
     explanation: "說明", sort_order: "排序",
     display_name: "姓名", initial: "字頭", role: "角色",
@@ -579,6 +580,7 @@
     topics: "sort_order",
     entities: "name",
     player_scores: "player_name",
+    entity_aliases: "entity_code",
   };
 
   async function renderCrudTable(panel, tableName, cols) {
@@ -590,7 +592,7 @@
     var allRows = res.data || [];
     var readonlyCols = ["total", "total_aff", "total_neg", "ballot_winner", "status"];
 
-    var pkCol = tableName === "entities" ? "code" : "id";
+    var pkCol = tableName === "entities" ? "code" : tableName === "entity_aliases" ? "entity_code" : "id";
 
     function rowPk(row) { return row[pkCol] || row.id; }
 
@@ -680,7 +682,13 @@
         if (!confirm("確定要刪除這筆資料？此操作無法復原。")) return;
         var delId = e.target.dataset.deleteRow;
         e.target.textContent = "…";
-        var delRes = await db.from(tableName).delete().eq(pkCol, delId);
+        var delQuery = db.from(tableName).delete().eq(pkCol, delId);
+        if (tableName === "entity_aliases") {
+          var delTrEl = panel.querySelector('tr[data-row-id="' + delId + '"]');
+          var delAlias = delTrEl ? delTrEl.querySelector('[data-col="alias"]') : null;
+          if (delAlias) delQuery = delQuery.eq("alias", delAlias.value);
+        }
+        var delRes = await delQuery;
         if (delRes.error) {
           alert(translateError(delRes.error.message));
           e.target.textContent = "刪除";

@@ -146,7 +146,7 @@ function renderEventFinder() {
     <button class="event-result-card" type="button" data-event-name="${escapeHtml(event.name)}">
       <span class="event-result-year">${escapeHtml(event.latestDate.slice(0, 4) || "年份未載明")}</span>
       <strong>${escapeHtml(event.name)}</strong>
-      <small>${event.records.length} 場 · ${event.honors.length} 項榮譽${event.topics.length ? ` · ${event.topics.length} 筆辯題` : ""}</small>
+      <small>${event.records.length} 場 · ${event.honors.length} 項榮譽${event.topics.length ? ` · ${event.topics.length} 道辯題` : ""}</small>
     </button>`).join("") : '<div class="event-finder-empty">沒有符合的賽事，請縮短關鍵字或切換年份。</div>';
 }
 

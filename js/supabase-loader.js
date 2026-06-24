@@ -8,8 +8,9 @@
   const db = supabase.createClient(config.url, config.anonKey);
 
   try {
-    const [entitiesRes, recordsRes, honorsRes, topicsRes, competitionsRes] = await Promise.all([
+    const [entitiesRes, aliasesRes, recordsRes, honorsRes, topicsRes, competitionsRes] = await Promise.all([
       db.from("entities").select("*"),
+      db.from("entity_aliases").select("*"),
       db.from("public_records").select("*, competitions(name)"),
       db.from("honors").select("*, competitions(name), entities(name)"),
       db.from("topics").select("*, competitions(name)"),
@@ -21,8 +22,15 @@
       return;
     }
 
+    // 從 entity_aliases 表組合別名（正規化後不再讀 entities.aliases）
+    var aliasMap = {};
+    (aliasesRes.data || []).forEach(function (a) {
+      if (!aliasMap[a.entity_code]) aliasMap[a.entity_code] = [];
+      aliasMap[a.entity_code].push(a.alias);
+    });
+
     const entities = (entitiesRes.data || []).map(function (e) {
-      return { code: e.code, type: e.type, name: e.name, aliases: e.aliases || "" };
+      return { code: e.code, type: e.type, name: e.name, aliases: (aliasMap[e.code] || []).join("|") };
     });
 
     const records = (recordsRes.data || []).map(function (r) {
@@ -50,7 +58,7 @@
         matchDate: "",
         honorName: h.title,
         recipient: h.recipient,
-        team: h.school || entityName || "",
+        team: entityName || "",
         honorType: h.honor_type || "team",
         note: h.note || "",
         teamId: h.entity_code || "",
