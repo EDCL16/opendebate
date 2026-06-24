@@ -72,8 +72,10 @@
     var overlay = document.getElementById("loginModal");
 
     if (loginBtn) loginBtn.addEventListener("click", showLoginModal);
-    if (logoutBtn) logoutBtn.addEventListener("click", function () {
-      db.auth.signOut();
+    if (logoutBtn) logoutBtn.addEventListener("click", async function () {
+      await db.auth.signOut();
+      window.location.hash = "#home";
+      window.location.reload();
     });
     if (closeBtn) closeBtn.addEventListener("click", hideLoginModal);
     if (overlay) overlay.addEventListener("click", function (e) {

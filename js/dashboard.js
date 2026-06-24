@@ -491,7 +491,7 @@
           '<td>' + escapeHtml(u.display_name) + '</td>' +
           '<td>' + escapeHtml(u.initial || "") + '</td>' +
           '<td><select class="profile-role-select" data-uid="' + u.id + '">' +
-          ['admin', 'user', 'recorder'].map(function (r) { return '<option value="' + r + '"' + (u.role === r ? ' selected' : '') + '>' + r + '</option>'; }).join("") +
+          [['admin','管理員'], ['user','使用者'], ['recorder','記錄員']].map(function (r) { return '<option value="' + r[0] + '"' + (u.role === r[0] || (r[0] === 'user' && u.role === 'viewer') ? ' selected' : '') + '>' + r[1] + '</option>'; }).join("") +
           '</select></td>' +
           '<td><button class="btn-save-role" type="button" data-uid="' + u.id + '">儲存</button></td></tr>';
       }).join("") + '</tbody></table>';
