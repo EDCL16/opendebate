@@ -43,7 +43,8 @@
     }, { passive: false });
     els.eventTimeline.addEventListener("click", (event) => {
       if (suppressTimelineClick) { event.preventDefault(); suppressTimelineClick = false; return; }
-      const node = event.target.closest("[data-event-name]");
+      const node = event.target.closest("[data-event-name]")
+        || document.elementFromPoint(event.clientX, event.clientY)?.closest("[data-event-name]");
       if (!node) return;
       if (window.matchMedia("(hover: none)").matches && !node.classList.contains("is-revealed")) {
         els.eventTimeline.querySelectorAll(".is-revealed").forEach((item) => item.classList.remove("is-revealed"));
@@ -53,6 +54,7 @@
       }
       renderEvent(node.dataset.eventName);
       showView("events");
+      requestAnimationFrame(() => els.eventDetail.scrollIntoView({ behavior: "smooth", block: "start" }));
     });
     els.eventSearch.addEventListener("input", renderEventFinder);
     els.eventYear.addEventListener("change", renderEventFinder);
