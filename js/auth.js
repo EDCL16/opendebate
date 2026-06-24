@@ -95,7 +95,6 @@
       var errEl = document.getElementById("loginError");
       errEl.classList.add("is-hidden");
       var res = await db.auth.signInWithPassword({ email: email, password: password });
-      console.log("login result:", JSON.stringify(res));
       if (res.error) {
         var rawMsg = res.error.message || res.error.msg || JSON.stringify(res.error);
         var authErrors = {

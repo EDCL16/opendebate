@@ -56,6 +56,13 @@
           .eq("judge", name),
       ]);
 
+      if (scoresRes.error || ballotsRes.error) {
+        var qErr = scoresRes.error || ballotsRes.error;
+        var loadingEl3 = container.querySelector(".loading-text");
+        var errMsg = '<p class="form-error">查詢失敗：' + escapeHtml(translateError(qErr.message)) + '</p>';
+        if (loadingEl3) loadingEl3.outerHTML = errMsg;
+        return;
+      }
       var scores = (scoresRes.data || []).filter(function (s) { return s.ballots && s.ballots.approval_status === "approved"; });
       var judgeBallots = (ballotsRes.data || []).filter(function (b) { return b.approval_status === "approved"; });
 
@@ -168,6 +175,10 @@
       // 提交：自動找或建立 competition + match
       document.getElementById("recorderForm").addEventListener("submit", async function (e) {
         e.preventDefault();
+        var submitBtn = e.target.querySelector('[type="submit"]');
+        if (submitBtn.disabled) return;
+        submitBtn.disabled = true;
+        submitBtn.textContent = "提交中…";
         var errEl = document.getElementById("recError");
         var sucEl = document.getElementById("recSuccess");
         errEl.classList.add("is-hidden");
@@ -220,16 +231,19 @@
         };
 
         var ballotRes = await db.from("ballots").insert(ballotData).select("id").single();
-        if (ballotRes.error) { errEl.textContent = "裁判單提交失敗：" + translateError(ballotRes.error.message); errEl.classList.remove("is-hidden"); return; }
+        if (ballotRes.error) { errEl.textContent = "裁判單提交失敗：" + translateError(ballotRes.error.message); errEl.classList.remove("is-hidden"); submitBtn.disabled = false; submitBtn.textContent = "提交裁判單（待審核）"; return; }
 
         var players = collectPlayers(ballotRes.data.id, matchId);
         if (players.length) {
           var psRes = await db.from("player_scores").insert(players);
-          if (psRes.error) { errEl.textContent = "選手分數寫入失敗：" + translateError(psRes.error.message); errEl.classList.remove("is-hidden"); return; }
+          if (psRes.error) { errEl.textContent = "選手分數寫入失敗：" + translateError(psRes.error.message); errEl.classList.remove("is-hidden"); submitBtn.disabled = false; submitBtn.textContent = "提交裁判單（待審核）"; return; }
         }
 
         sucEl.textContent = "裁判單已提交，等待管理員審核。";
         sucEl.classList.remove("is-hidden");
+        e.target.reset();
+        submitBtn.disabled = false;
+        submitBtn.textContent = "提交裁判單（待審核）";
       });
     } catch (err) {
       container.innerHTML = '<p class="form-error">載入失敗：' + escapeHtml(translateError(err.message)) + '</p>';
@@ -443,18 +457,25 @@
         '</div></div>';
     }).join("");
 
-    panel.addEventListener("click", async function handler(e) {
+    panel.addEventListener("click", async function (e) {
       var approveId = e.target.dataset.approve;
       var rejectId = e.target.dataset.reject;
       if (!approveId && !rejectId) return;
       var id = approveId || rejectId;
       var status = approveId ? "approved" : "rejected";
       e.target.disabled = true;
-      await db.from("ballots").update({ approval_status: status }).eq("id", id);
+      var res = await db.from("ballots").update({ approval_status: status }).eq("id", id);
       var card = panel.querySelector('[data-ballot-id="' + id + '"]');
-      if (card) card.style.opacity = "0.4";
-      card.innerHTML += '<p><strong>' + (status === "approved" ? "已核准" : "已駁回") + '</strong></p>';
-      panel.removeEventListener("click", handler);
+      if (res.error) {
+        e.target.disabled = false;
+        alert(translateError(res.error.message));
+        return;
+      }
+      if (card) {
+        card.style.opacity = "0.4";
+        var actions = card.querySelector(".approval-actions");
+        if (actions) actions.innerHTML = '<p><strong>' + (status === "approved" ? "✅ 已核准" : "❌ 已駁回") + '</strong></p>';
+      }
     });
   }
 
@@ -611,7 +632,12 @@
     // Search filter
     var searchInput = document.getElementById("adminSearchInput");
     var searchMeta = document.getElementById("adminSearchMeta");
+    var searchTimer;
     searchInput.addEventListener("input", function () {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(doSearch, 200);
+    });
+    function doSearch() {
       var needle = searchInput.value.trim().toLowerCase();
       var filtered = needle ? allRows.filter(function (row) {
         return cols.some(function (c) {
@@ -623,7 +649,7 @@
       searchMeta.textContent = filtered.length + ' / ' + allRows.length + ' 筆';
       var tableWrap = panel.querySelector(".admin-table-wrap");
       if (tableWrap) tableWrap.outerHTML = buildTable(filtered);
-    });
+    }
 
     // Save / Delete / Add
     panel.addEventListener("click", async function (e) {
