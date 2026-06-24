@@ -132,13 +132,22 @@
       var compRes = await db.from("competitions").select("id, name").order("start_date", { ascending: false });
       var competitions = compRes.data || [];
 
+      var compListId = "recCompList";
+      var compDatalist = '<datalist id="' + compListId + '">' +
+        competitions.map(function (c) { return '<option value="' + escapeHtml(c.name) + '"></option>'; }).join("") + '</datalist>';
+
       container.innerHTML =
         '<form id="recorderForm" class="recorder-form" autocomplete="off">' +
-        '<label>賽事<select id="recCompetition" required>' +
-        '<option value="">選擇賽事</option>' +
-        competitions.map(function (c) { return '<option value="' + c.id + '">' + escapeHtml(c.name) + '</option>'; }).join("") +
-        '</select></label>' +
-        '<label>場次<select id="recMatch" required disabled><option value="">先選擇賽事</option></select></label>' +
+        '<label>賽事<input id="recCompetition" type="text" list="' + compListId + '" required placeholder="輸入或選擇賽事…" /></label>' + compDatalist +
+        '<label>比賽日期<input id="recMatchDate" type="date" /></label>' +
+        '<div class="rec-scores-grid">' +
+        '<label>時段<input id="recPeriod" type="number" min="1" max="8" placeholder="選填" /></label>' +
+        '<label>會場<input id="recVenue" type="number" min="1" max="99" placeholder="選填" /></label>' +
+        '</div>' +
+        '<div class="rec-scores-grid">' +
+        '<label>正方隊伍<input id="recAffTeam" type="text" required placeholder="正方隊伍名稱" /></label>' +
+        '<label>反方隊伍<input id="recNegTeam" type="text" required placeholder="反方隊伍名稱" /></label>' +
+        '</div>' +
         '<label>裁判姓名<input id="recJudge" type="text" required value="' + escapeHtml(window.DebateAuth.profile?.display_name || "") + '" /></label>' +
         '<label>記錄員<input id="recRecorderName" type="text" value="' + escapeHtml(window.DebateAuth.profile?.display_name || "") + '" /></label>' +
         '<div class="rec-scores-grid">' +
@@ -156,21 +165,7 @@
         '<button class="form-submit" type="submit">提交裁判單（待審核）</button>' +
         '</form>';
 
-      // 賽事切換 → 載入場次
-      document.getElementById("recCompetition").addEventListener("change", async function () {
-        var matchSel = document.getElementById("recMatch");
-        var compId = this.value;
-        if (!compId) { matchSel.innerHTML = '<option value="">先選擇賽事</option>'; matchSel.disabled = true; return; }
-        matchSel.innerHTML = '<option value="">載入中…</option>';
-        var matchRes = await db.from("matches").select("id, match_date, period, venue, affirmative_team, negative_team").eq("competition_id", compId).order("match_date");
-        var matches = matchRes.data || [];
-        matchSel.innerHTML = '<option value="">選擇場次</option>' + matches.map(function (m) {
-          return '<option value="' + m.id + '">時段' + (m.period || "-") + ' 會場' + (m.venue || "-") + '：' + escapeHtml(m.affirmative_team) + ' vs ' + escapeHtml(m.negative_team) + '</option>';
-        }).join("");
-        matchSel.disabled = false;
-      });
-
-      // 提交
+      // 提交：自動找或建立 competition + match
       document.getElementById("recorderForm").addEventListener("submit", async function (e) {
         e.preventDefault();
         var errEl = document.getElementById("recError");
@@ -178,12 +173,40 @@
         errEl.classList.add("is-hidden");
         sucEl.classList.add("is-hidden");
 
-        var matchId = document.getElementById("recMatch").value;
-        if (!matchId) { errEl.textContent = "請選擇場次"; errEl.classList.remove("is-hidden"); return; }
+        var compName = document.getElementById("recCompetition").value.trim();
+        var affTeam = document.getElementById("recAffTeam").value.trim();
+        var negTeam = document.getElementById("recNegTeam").value.trim();
+        if (!compName) { errEl.textContent = "請填寫賽事名稱"; errEl.classList.remove("is-hidden"); return; }
+        if (!affTeam || !negTeam) { errEl.textContent = "請填寫正方和反方隊伍"; errEl.classList.remove("is-hidden"); return; }
 
         var session = await db.auth.getSession();
         var userId = session.data.session?.user?.id;
 
+        // 找或建 competition
+        var comp = competitions.find(function (c) { return c.name === compName; });
+        var compId;
+        if (comp) {
+          compId = comp.id;
+        } else {
+          var compRes = await db.from("competitions").insert({ name: compName }).select("id").single();
+          if (compRes.error) { errEl.textContent = "賽事建立失敗：" + translateError(compRes.error.message); errEl.classList.remove("is-hidden"); return; }
+          compId = compRes.data.id;
+        }
+
+        // 建 match
+        var matchData = {
+          competition_id: compId,
+          match_date: document.getElementById("recMatchDate").value || null,
+          period: parseInt(document.getElementById("recPeriod").value) || null,
+          venue: parseInt(document.getElementById("recVenue").value) || null,
+          affirmative_team: affTeam,
+          negative_team: negTeam,
+        };
+        var matchRes = await db.from("matches").insert(matchData).select("id").single();
+        if (matchRes.error) { errEl.textContent = "場次建立失敗：" + translateError(matchRes.error.message); errEl.classList.remove("is-hidden"); return; }
+        var matchId = matchRes.data.id;
+
+        // 建 ballot
         var ballotData = {
           match_id: matchId,
           judge: document.getElementById("recJudge").value.trim(),
@@ -374,17 +397,49 @@
     panel.innerHTML = '<h3>' + items.length + ' 張待審核裁判單</h3>' + items.map(function (b) {
       var m = b.matches || {};
       var comp = m.competitions ? m.competitions.name : "";
-      var ps = (b.player_scores || []).map(function (p) {
-        return escapeHtml(p.player_name) + '（' + (p.side === "affirmative" ? "正" : "反") + p.seat_order + '）' + p.speech + '/' + p.question + '/' + p.defense;
-      }).join("、");
+      var affPlayers = (b.player_scores || []).filter(function (p) { return p.side === "affirmative"; })
+        .sort(function (a, b2) { return a.seat_order - b2.seat_order; });
+      var negPlayers = (b.player_scores || []).filter(function (p) { return p.side === "negative"; })
+        .sort(function (a, b2) { return a.seat_order - b2.seat_order; });
+
+      function playerRow(p) {
+        return '<tr><td>' + escapeHtml(p.player_name) + '</td><td>' + p.speech + '</td><td>' + p.question + '</td><td>' + p.defense + '</td><td><strong>' + p.total + '</strong></td></tr>';
+      }
+
+      function playerTable(players, sideLabel) {
+        if (!players.length) return '';
+        return '<div class="approval-side"><h4>' + sideLabel + '選手</h4>' +
+          '<table class="approval-score-table"><thead><tr><th>姓名</th><th>申論</th><th>質詢</th><th>答辯</th><th>小計</th></tr></thead><tbody>' +
+          players.map(playerRow).join("") + '</tbody></table></div>';
+      }
+
       return '<div class="approval-card" data-ballot-id="' + b.id + '">' +
         '<div class="approval-header"><strong>' + escapeHtml(comp) + '</strong><span>' + escapeHtml(formatDate(m.match_date || "")) + '</span></div>' +
-        '<p>' + escapeHtml(m.affirmative_team || "") + ' vs ' + escapeHtml(m.negative_team || "") + '</p>' +
-        '<p>裁判：' + escapeHtml(b.judge) + ' · 正方 ' + b.total_aff + ' / 反方 ' + b.total_neg + ' → ' + escapeHtml(b.ballot_winner || "") + '</p>' +
-        (ps ? '<p class="approval-players">選手：' + ps + '</p>' : '') +
+        '<div class="approval-match">' +
+          '<span class="approval-team aff">' + escapeHtml(m.affirmative_team || "") + '</span>' +
+          '<span class="approval-vs">vs</span>' +
+          '<span class="approval-team neg">' + escapeHtml(m.negative_team || "") + '</span>' +
+        '</div>' +
+        '<div class="approval-info">' +
+          '<div><span class="approval-label">裁判</span>' + escapeHtml(b.judge) + '</div>' +
+          (b.recorder ? '<div><span class="approval-label">記錄員</span>' + escapeHtml(b.recorder) + '</div>' : '') +
+        '</div>' +
+        '<div class="approval-scores">' +
+          '<div class="approval-score-block">' +
+            '<h4>隊伍分數</h4>' +
+            '<table class="approval-score-table"><thead><tr><th></th><th>正方</th><th>反方</th></tr></thead><tbody>' +
+            '<tr><td>論點分</td><td>' + b.argument_score_aff + '</td><td>' + b.argument_score_neg + '</td></tr>' +
+            '<tr><td>結辯分</td><td>' + b.closing_score_aff + '</td><td>' + b.closing_score_neg + '</td></tr>' +
+            '<tr class="score-total"><td>總分</td><td><strong>' + b.total_aff + '</strong></td><td><strong>' + b.total_neg + '</strong></td></tr>' +
+            '</tbody></table>' +
+            '<div class="approval-winner">' + escapeHtml(b.ballot_winner || "尚未判定") + '</div>' +
+          '</div>' +
+          playerTable(affPlayers, "正方") +
+          playerTable(negPlayers, "反方") +
+        '</div>' +
         '<div class="approval-actions">' +
-        '<button class="btn-approve" type="button" data-approve="' + b.id + '">核准</button>' +
-        '<button class="btn-reject" type="button" data-reject="' + b.id + '">駁回</button>' +
+          '<button class="btn-approve" type="button" data-approve="' + b.id + '">核准</button>' +
+          '<button class="btn-reject" type="button" data-reject="' + b.id + '">駁回</button>' +
         '</div></div>';
     }).join("");
 
@@ -501,6 +556,7 @@
   var TABLE_SORT = {
     topics: "sort_order",
     entities: "name",
+    player_scores: "player_name",
   };
 
   async function renderCrudTable(panel, tableName, cols) {
@@ -575,20 +631,14 @@
         var rowId = e.target.dataset.saveRow;
         var tr = panel.querySelector('tr[data-row-id="' + rowId + '"]');
         var updates = {};
-        var editFkError = "";
         tr.querySelectorAll(".admin-cell-input").forEach(function (inp) {
           var col = inp.dataset.col;
           if (inp.dataset.fkCol) {
-            var resolved = resolveFkValue(inp.dataset.fkCol, inp.value);
-            if (inp.value && resolved === inp.value && fkCache[inp.dataset.fkCol]) {
-              editFkError = "「" + colLabel(col) + "」找不到「" + inp.value + "」，請從列表中選擇";
-            }
-            updates[col] = resolved;
+            updates[col] = resolveFkValue(inp.dataset.fkCol, inp.value);
           } else {
             updates[col] = inp.value || null;
           }
         });
-        if (editFkError) { alert(editFkError); return; }
         e.target.textContent = "…";
         var upRes = await db.from(tableName).update(updates).eq(pkCol, rowId);
         if (upRes.error) {
