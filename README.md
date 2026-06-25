@@ -1,6 +1,7 @@
 # 公開辯論資訊網
 
 台灣高中辯論賽事的公開查詢與管理平台。前端為純 HTML/JS SPA，後端使用 Supabase（PostgreSQL + Auth + RLS）。
+[網站可直接雙擊開啟](https://edcl16.github.io/opendebate/)
 
 ## 功能
 
