@@ -1,85 +1,106 @@
 # 公開辯論資訊網
 
-這是純公開查詢網站。網站可直接雙擊 `index.html` 開啟，不需要網路或額外伺服器。
+台灣高中辯論賽事的公開查詢與管理平台。前端為純 HTML/JS SPA，後端使用 Supabase（PostgreSQL + Auth + RLS）。
 
-## 首頁內容
+## 功能
 
-- 「近期盃賽時間軸」由最新賽事開始排列；滑鼠停留在節點上可查看冠軍，點擊可進入完整賽事頁。
-- 電腦可用滑鼠左右拖曳或在時間軸上使用滾輪瀏覽更多賽事。
-- 手機時間軸固定顯示一段高度，可在區塊內上下滑動；第一次點選節點會顯示冠軍，再點一次即可進入賽事頁。
-- 「已收錄賽事」會列出資料檔內的全部賽事，每張卡片都可直接開啟完整賽果與榮譽。
-- 首頁底部有「累積榮譽、參賽場次、總勝場」三個學校排行榜；手機可左右滑動切換，不必連續向下捲動。
+### 公開頁面（無需登入）
+- **首頁**：近期盃賽時間軸、已收錄賽事卡片、學校排行榜（累積榮譽／參賽場次／總勝場）
+- **賽事資料庫**：依年份或關鍵字搜尋，查看完整比賽結果與公開榮譽
+- **搜尋**：學校、隊伍、選手姓名全文搜尋
+- **資料回報**：透過 Google 表單回報缺漏資料
 
-## 資料架構（第二版）
+### 登入後功能（Supabase Auth）
+- **我的紀錄**（所有角色）：依姓名比對 player_scores / ballots，顯示個人出賽與裁判紀錄
+- **提交裁判單**（記錄員 / 管理員）：手填賽事、場次、選手分數，自動建立 match + ballot，提交後為 pending 狀態
+- **管理後台**（管理員）：
+  - 待審核裁判單核准／駁回
+  - 所有資料表 CRUD（賽事、隊伍、場次、裁判單、選手分數、榮譽、公開戰績、辯題、隊伍別名）
+  - FK 欄位以下拉選單＋搜尋操作，特殊欄位以日期選擇器或下拉選單呈現
+  - 使用者角色管理
 
-網站畫面仍讀取單一 `data/public-data.js`，但這個檔案由更新程式自動合併產生。資料現在分成：
+### 角色
 
-- `records`：每場勝負與比分。
-- `honors`：團體或個人榮譽。
-- `entities`：固定編號的學校、特殊隊伍與大學。
-- `attendance`：登場選手紀錄，目前不顯示在網頁，保留給未來的登場次數統計。
-- `topics`：各屆賽事的多筆辯題，目前不顯示在網頁，保留給未來賽事頁使用。
+| 角色 | 說明 |
+|------|------|
+| **admin** | 全部資料表 CRUD、審核裁判單、管理使用者角色 |
+| **recorder** | 提交裁判單（pending 狀態，需管理員核准） |
+| **user** | 查看個人辯論紀錄 |
+| 未登入 | 瀏覽公開資料 |
 
-單位代碼採三種前綴：`s001` 起為中學端學校、`p001` 起為特殊或跨校隊伍、`u001` 起為大學。請編輯 `data/entity-registry.xlsx`；更新程式會自動同步產生 `entity-registry.csv`。同校不同名稱可用 `|` 放在 `aliases` 欄，搜尋、戰績與積分都會依同一代碼歸戶。名稱 `0` 是有效隊名，空白列則會忽略。
+## 技術架構
 
-## 建議的資料整理方式：一個賽事一個工作分頁
+```
+index.html (SPA, hash routing)
+├── js/core.js          工具函數 (escapeHtml, formatDate, createStore...)
+├── js/interactions.js  事件處理
+├── app.js              首頁/賽事/搜尋/回報 渲染
+├── js/auth.js          Supabase Auth 登入/登出/session
+├── js/dashboard.js     個人紀錄/管理後台/裁判單提交
+├── js/supabase-config.js  Supabase URL + anon key
+├── js/supabase-loader.js  資料載入 + Auth/Dashboard 初始化
+├── styles.css          全站樣式
+└── data/public-data.js 靜態資料 fallback
+```
 
-既有主要資料檔是：
+## 資料庫 Schema（Supabase PostgreSQL）
 
-- `data/public-data.xlsx`
+```
+profiles         ← auth.users (1:1)    使用者個人檔案 + 角色
+entities         隊伍/學校名冊 (PK: code)
+entity_aliases   隊伍別名 (正規化自 entities.aliases)
+competitions     賽事/盃賽
+topics           辯題 → competitions
+matches          場次 → competitions, entities
+ballots          裁判單 → matches, auth.users
+player_scores    選手分數 → ballots, matches
+honors           榮譽 → competitions, entities
+public_records   簡化公開戰績 → competitions, matches, entities
+attendance       選手登場紀錄 → matches, competitions, entities
+```
 
-之後不必覆蓋它。任何檔名以 `public-data` 開頭的 `.xlsx` 或 `.csv` 都會一起讀取，例如 `public-data2.xlsx`、`public-data-2027.xlsx`。完全相同的資料會自動去重。
+### 審核流程
 
-每個 Excel 分頁的使用方式：
+```
+記錄員提交裁判單 → ballot (approval_status = 'pending')
+  ↓ trigger 算 ballot_winner，但 match 結果不受影響
+管理員核准 → UPDATE approval_status = 'approved'
+  ↓ trigger 重算 match 結果（只計 approved ballots）
+管理員駁回 → UPDATE approval_status = 'rejected'
+  ↓ 無影響
+```
 
-1. 第一列是醒目的賽事標題。
-2. 第二列的「賽事名稱」填完整名稱，只需填一次。
-3. 第三列以下是資料表；「盃賽」欄可以留白。
-4. 新增賽事時，複製一個既有分頁，修改分頁名稱與第二列的賽事名稱，再清除舊資料。
-5. 未來要記錄登場選手時，可在標題列增加選填欄位「正方登場選手」與「反方登場選手」，多人用頓號 `、` 分隔。
-6. 「賽事名稱」下方可填「辯題1、辯題2……」，B 欄填題目、D 欄填解釋；預設提供四列，超過四題可自行繼續新增。
+### 正規化說明
 
-辯題與解釋會在更新時寫入 `public-data.js` 的 `topics`。首頁賽事卡最多預覽兩題，賽事頁顯示完整辯題；較長的辯題解釋目前只保存、不顯示，待未來建立專區。CSV 可增加「辯題」與「辯題解釋」欄，多題以換行或 `|` 分隔並依序對應。
+- **1NF**：`entity_aliases` 表取代原本 `entities.aliases` 的 pipe 分隔多值
+- **2NF/3NF**：`matches` 和 `ballots` 的聚合欄位（total_aff, match_winner 等）為 trigger 維護的受控反正規化
+- **完整性約束**：`player_scores(ballot_id, side, seat_order)` UNIQUE、`attendance(match_id, player_name, side)` UNIQUE、所有 entities FK 加 ON UPDATE CASCADE
 
-## 資料回報
+### Migrations
 
-網站的「資料回報」頁使用單一 Google 表單，統一收集賽事積分、選手上場與盃賽辯題回報。表單網址設定於 `js/site-config.js` 的 `formUrl`；網址留白時按鈕會顯示「表單準備中」，填入後即自動啟用。
+| 檔案 | 內容 |
+|------|------|
+| `001_initial_schema.sql` | 核心表、索引、RLS、trigger (compute_ballot_winner, recompute_match_result) |
+| `002_derived_views.sql` | v_public_records, v_attendance 衍生 view |
+| `003_auth_profiles_approval.sql` | profiles 表、Auth trigger、ballot 審核欄位、角色制 RLS |
+| `004_normalization_fixes.sql` | entity_aliases 表、UNIQUE/NOT NULL/CASCADE 約束 |
 
-Numbers 可以直接開啟這份 `.xlsx`。編輯完畢後，請使用「檔案 → 輸出至 → Excel」保留為 `.xlsx`，不要只存成 `.numbers`。
+## 本機啟動
 
-## 更新網站
+1. 雙擊 `index.html` 即可瀏覽公開資料（靜態 fallback）
+2. 若要連接 Supabase，在 `js/supabase-config.js` 填入你的 Project URL 和 anon key
+3. 到 Supabase SQL Editor 依序執行 `001` ~ `004` migration
+4. 到 Authentication → Sign In / Providers 啟用 Email
+5. 建立第一個使用者後，在 SQL Editor 設定為 admin：
+   ```sql
+   UPDATE profiles SET role = 'admin' WHERE display_name = '你的名字';
+   ```
 
-新增或編輯任一 `public-data*.xlsx/csv` 後，雙擊根目錄的 `更新網站資料.command`。
+## 資料匯入工具
 
-更新程式會逐一讀取所有工作分頁、檢查欄位，再合併產生 `data/public-data.js`。看到「更新完成」後，按 Return 即會開啟網站。
+- `tools/import.html`：一次性從 public-data.js 匯入 Supabase（需 service_role key）
+- `tools/csv-import.html`：CSV 匯入戰績、榮譽、裁判單
 
-名冊更新方式：用 Numbers 或 Excel 編輯 `entity-registry.xlsx`，放在 `data` 資料夾後執行同一個更新工具即可。也可直接把該 Excel 拖到更新工具；舊版本會先備份至 `data/backups`。
+## 部署
 
-更新時也會自動改變 `index.html` 裡的資料、程式與樣式版本，避免 GitHub Pages 或瀏覽器繼續使用舊快取。上傳時請至少一併提交：
-
-- `data/public-data*.xlsx/csv`
-- `data/entity-registry.xlsx`
-- `data/entity-registry.csv`
-- `data/public-data.js`
-- `index.html`
-
-也可以直接把新的 `.xlsx` 或 `.csv` 拖到 `更新網站資料.command` 上；工具會保留舊檔，以原檔名新增來源。若檔名重複，會自動加上時間，不會刪除既有資料。
-
-若 macOS 第一次阻擋執行，請對 `更新網站資料.command` 按右鍵，選擇「打開」並確認一次；之後即可正常雙擊。
-
-## 哪些檔案要管理
-
-- `data/public-data*.xlsx/csv`：所有歷史與新增來源，都會合併讀取。
-- `data/entity-registry.xlsx`：固定單位代碼、正式名稱與別名的主要編輯來源。
-- `data/entity-registry.csv`：由更新程式同步產生，建議與網站一起上傳。
-- `data/public-data.js`：由更新程式自動產生，不需編輯。
-- `tools/build_data.py`：資料轉換程式，不需編輯。
-- `data/seed-public-data.js`：舊版備份，網站不會讀取。
-
-若某個分頁缺少欄位或資料不完整，更新視窗會指出是哪一個工作分頁，不會讓網站悄悄使用舊資料。
-
-GitHub Pages 部署通常需要數十秒至數分鐘。若剛上傳時仍看不到新資料，請稍候後重新整理。
-
-## 發布網站
-
-更新完成後，將整個資料夾上傳到 GitHub Pages、Netlify、Vercel 或其他靜態網站空間即可。
+靜態前端部署到 GitHub Pages / Netlify / Vercel，Supabase 作為後端，不需要額外 server。
